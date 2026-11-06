@@ -309,7 +309,7 @@ function nextEst(a){var b=a._bill;if(!b)return 0;var y=+b.due.slice(0,4),m=+b.du
   S.tx.forEach(function(t){if(t.a===a.id&&t.f===key&&!(t.m<0&&(t.c==='Credit card payment'||t.c==='Transfer - Cash')))v+=t.m});return v>1?v:0}
 function predDue(d){var y=+d.slice(0,4),m=+d.slice(5,7)+1;if(m>12){m=1;y++}return y+'-'+(m<10?'0':'')+m+'-'+d.slice(8,10)}
 function faturas(){var out=[];S.accounts.forEach(function(a){if(a.type!=='CREDIT'||!a._bill)return;var b=billInfo(a);
-  if(b.rest>0)out.push({n:a._item,due:b.due,amt:b.rest,late:b.late});
+  if(b.rest>0)out.push({n:a._item,due:b.due,amt:b.rest,late:b.late,min:b.min});
   else if(b.late){var e=nextEst(a);if(e>0)out.push({n:a._item,due:predDue(b.due),amt:e,late:false,nova:true})}});
   return out.sort(function(x,y){return (x.due||'9')<(y.due||'9')?-1:1})}
 function kshort(v){return Math.abs(v)>=1000?'R$ '+(v/1000).toFixed(1).replace('.',',')+' mil':'R$ '+Math.round(v)}
@@ -419,9 +419,9 @@ function vSim(){
   var tab='<details class="card"><summary>Mês a mês</summary><div class="row" style="border:0"><span class="lbl">Mês</span><span class="lbl n">Entra · Sai · Saldo</span></div>'+rows.map(function(r){return '<div class="row"><div class="l"><div>'+mlabel(r.k)+'</div></div><div class="n"><div class="sub">'+fmt(r.en)+' · '+fmt(r.sa)+(r.jr>0?' · +'+fmt(r.jr):'')+'</div><span class="'+(r.sd<0?'bad':'')+'">'+fmt(r.sd)+'</span></div></div>'}).join('')+'</details>';
   return res+'<div class="card"><div class="lbl">Saldo mês a mês</div>'+simSvg(rows.map(function(r){return r.sd}),rows.map(function(r){return MES[+r.k.slice(5,7)-1]}),SIM.meta)+'<div class="sub"><span style="color:#ffb86b">- - -</span> meta</div></div>'+par+ev+tab+
     '<div style="margin:6px 0 14px"><button class="btn sec" id="simreset">Voltar aos valores do plano</button></div>'}
-function vProjecao(){var v=S.pv||'sim';
-  var tg='<div class="chips"><button data-pv="sim" class="'+(v==='sim'?'on':'')+'">Meu cenário</button><button data-pv="fluxo" class="'+(v==='fluxo'?'on':'')+'">Plano do mês</button><button data-pv="meta" class="'+(v==='meta'?'on':'')+'">Meta 74 mil</button></div>';
-  return tg+(v==='fluxo'?vFluxo():v==='meta'?vProj():vSim())}
+function vProjecao(){var v=S.pv||'pag';
+  var tg= '<div class="chips"><button data-pv="pag" class="'+(v==='pag'?'on':'')+'">Pagar</button><button data-pv="sim" class="'+(v==='sim'?'on':'')+'">Meu cenário</button><button data-pv="fluxo" class="'+(v==='fluxo'?'on':'')+'">Plano do mês</button><button data-pv="meta" class="'+(v==='meta'?'on':'')+'">Meta 74 mil</button></div>';
+  return tg+(v==='fluxo'?vFluxo():v==='meta'?vProj():v==='sim'?vSim():vPlano())}
 function fixos(){var ms=lastMonths(6,true),by={};
   S.tx.forEach(function(t){if(t._V==null||ms.indexOf(t._M)<0||t._V<=0)return;var k=t._G+'|'+t._N;by[k]=by[k]||{g:t._G,n:t._N,m:{}};by[k].m[t._M]=(by[k].m[t._M]||0)+t._V});
   var out=[],total=0;Object.keys(by).forEach(function(k){var b=by[k],ks=Object.keys(b.m);if(ks.length>=4){var s=ks.reduce(function(a,m){return a+b.m[m]},0)/ks.length;out.push({g:b.g,n:b.n,c:ks.length,avg:s});total+=s}});
@@ -442,6 +442,48 @@ function insights(){var out=[],cm=curMonth(),now=new Date(),dia=now.getDate(),dm
 function metaCard(){var rows=simulate(),meses=rows.length,pc=Math.max(0,Math.min(100,S.reserva/SIM.meta*100)),R=15.9155,falta=Math.max(0,SIM.meta-S.reserva);
   return '<div class="card"><div class="dn"><svg viewBox="0 0 42 42" width="104" height="104"><circle r="'+R+'" cx="21" cy="21" fill="none" stroke="#1b2230" stroke-width="4.2"/><circle r="'+R+'" cx="21" cy="21" fill="none" stroke="#34e0a1" stroke-width="4.2" stroke-linecap="round" stroke-dasharray="'+pc+' '+(100-pc)+'" stroke-dashoffset="25"/><text x="21" y="23" text-anchor="middle" style="font:600 6px Inter,sans-serif;fill:#f2f5f9">'+Math.round(pc)+'%</text></svg>'+
     '<div class="leg" style="font-size:13px"><div style="display:block"><span class="lbl">Reserva para a Austrália</span></div><div style="display:block"><b style="font-size:20px">'+fmt(S.reserva)+'</b></div><div class="sub" style="display:block;white-space:normal">de '+fmt(SIM.meta)+' · faltam '+fmt(falta)+'. Em '+meses+' meses dá '+fmt(falta/meses)+' por mês.</div></div></div><label class="lbl" style="display:block;margin-top:14px">Quanto você já guardou (R$)</label><input id="res" inputmode="decimal" placeholder="Ex.: 3500" value="'+(S.reserva||'')+'" style="margin-bottom:0"></div>'}
+/* ---------- plano de pagamento ---------- */
+var PLD={entrada:700,entradaData:'2026-11-12',diario:22,bolsa:1700,emprest:320,peq:70};
+var PL=(function(){try{return Object.assign({},PLD,JSON.parse(ls('fin-plano')||'{}'))}catch(e){return Object.assign({},PLD)}})();
+var PLOK=(function(){try{return JSON.parse(ls('fin-plano-ok')||'{}')}catch(e){return {}}})();
+function savePl(){ls('fin-plano',JSON.stringify(PL))}
+function dayDiff(a,b){return Math.round((new Date(b)-new Date(a))/864e5)}
+function nextKey(){var d=new Date();d.setDate(1);d.setMonth(d.getMonth()+1);return d.getFullYear()+'-'+pad(d.getMonth()+1)}
+function billKey(key){var t0=0;S.tx.forEach(function(t){if(t._T==='CREDIT'&&t.f===key&&!(t.m<0&&(t.c==='Credit card payment'||t.c==='Transfer - Cash')))t0+=t.m});return t0}
+function billKeyBy(key){var o={};S.tx.forEach(function(t){if(t._T==='CREDIT'&&t.f===key&&!(t.m<0&&(t.c==='Credit card payment'||t.c==='Transfer - Cash'))){o[t._B]=(o[t._B]||0)+t.m}});return o}
+function planoNov(){var today=new Date().toISOString().slice(0,10),n=new Date(),end=n.getFullYear()+'-'+pad(n.getMonth()+1)+'-'+pad(new Date(n.getFullYear(),n.getMonth()+1,0).getDate()),cash=0,ev=[],steps=[],last=today;
+  S.accounts.forEach(function(a){if(a.type==='BANK')cash+=a.balance||0});
+  faturas().forEach(function(f){if(f.due&&f.due<=end)ev.push({d:f.due<today?today:f.due,t:'f',n:f.n,amt:f.amt,nova:f.nova,min:f.min||0})});
+  var ed=PL.entradaData||'';if(PL.entrada>0&&ed>=today&&ed<=end)ev.push({d:ed,t:'i',amt:PL.entrada});
+  ev.sort(function(a,b){return a.d<b.d?-1:a.d>b.d?1:(a.t==='i'?-1:1)});
+  var start=cash,restTot=0;
+  ev.forEach(function(e){cash-=PL.diario*dayDiff(last,e.d);last=e.d;
+    if(e.t==='i'){cash+=e.amt;steps.push({t:'i',d:e.d,amt:e.amt,cash:cash})}
+    else{var pay=Math.max(0,Math.min(e.amt,cash));cash-=pay;restTot+=e.amt-pay;steps.push({t:'f',d:e.d,n:e.n,amt:e.amt,pay:pay,rest:e.amt-pay,min:e.min,nova:e.nova,cash:cash})}});
+  var fim=cash-PL.diario*dayDiff(last,end);
+  return{steps:steps,start:start,fim:fim,rest:restTot,end:end}}
+function vPlano(){var p=planoNov(),nk=nextKey(),by=billKeyBy(nk),dec=0,k;for(k in by)dec+=by[k];
+  var morar=PL.diario*30,saidas=dec+p.rest+morar+PL.emprest+PL.peq,res=PL.bolsa-saidas;
+  var f=function(id,lab,val,type){return '<div><label class="lbl">'+lab+'</label><input id="'+id+'" '+(type?'type="'+type+'" value="'+val+'"':'inputmode="decimal" value="'+nstr(val)+'"')+'></div>'};
+  var rows=p.steps.map(function(s){var key=s.t+s.d+(s.n||''),ok=PLOK[key];
+    if(s.t==='i')return '<div class="row" style="opacity:'+(ok?.45:1)+'"><label class="hd" style="flex:1"><input type="checkbox" data-pk="'+key+'" '+(ok?'checked':'')+' style="width:20px;height:20px;margin:0"><div class="l"><div>Entrada esperada</div><div class="sub">'+dbr(s.d)+' · só conta se já tiver caído na conta</div></div></label><div class="n ok">+'+fmt(s.amt)+'</div></div>';
+    var full=s.rest<1;return '<div class="row" style="opacity:'+(ok?.45:1)+'"><label class="hd" style="flex:1;min-width:0"><input type="checkbox" data-pk="'+key+'" '+(ok?'checked':'')+' style="width:20px;height:20px;margin:0;flex:none">'+logo(s.n)+'<div class="l"><div>'+(full?'Pagar ':'Pagar parte do ')+esc(s.n)+'</div><div class="sub">'+dbr(s.d)+(s.nova?' (previsto)':'')+' · '+(full?'fatura inteira':'paga '+fmt(s.pay)+' de '+fmt(s.amt)+(s.min&&s.pay<s.min?' · abaixo do mínimo de '+fmt(s.min):''))+'</div>'+(full?'':'<div class="sub bad">Sobram '+fmt(s.rest)+' para parcelar ou rotativo</div>')+'</div></label><div class="n">−'+fmt(s.pay)+'</div></div>'}).join('');
+  return '<div class="card"><div class="lbl">Caixa hoje (contas)</div><div class="big">'+fmt(p.start)+'</div><div class="sub" style="margin-top:6px">Pagando as faturas na ordem do vencimento, só com dinheiro que existe, e descontando o gasto diário de '+fmt(PL.diario)+'. Sem usar o cartão.</div></div>'+
+  '<h3>Passo a passo até o fim do mês</h3><div class="card">'+(rows||'<div class="sub">Sem faturas a vencer neste mês.</div>')+'</div>'+
+  '<div class="card"><div class="lbl">No fim de '+mlabel(p.end.slice(0,7))+'</div><div class="big2 '+(p.fim<0?'bad':'ok')+'">'+fmt(p.fim)+'</div><div class="sub">'+(p.fim<0?'Não fecha o mês: esse valor iria para o cartão e entraria nas faturas de '+mlabel(nk)+'.':'Sobra no fim do mês.')+(p.rest>=1?' Ficaram '+fmt(p.rest)+' de faturas sem pagar.':'')+'</div></div>'+
+  '<h3>Dezembro (só com o que é certo)</h3><div class="card">'+
+    '<div class="row"><span>Bolsa (certa)</span><b class="ok">+'+fmt(PL.bolsa)+'</b></div>'+
+    '<div class="row"><div class="l"><div>Faturas que já estão nos cartões</div><div class="sub">'+Object.keys(by).map(function(b){return esc(b)+' '+fmt(by[b])}).join(' · ')+'</div></div><b class="n">−'+fmt(dec)+'</b></div>'+
+    '<div class="row"><span>Saldo de novembro sem pagar</span><b>−'+fmt(p.rest)+'</b></div>'+
+    '<div class="row"><span>Comida e transporte ('+fmt(PL.diario)+' por dia)</span><b>−'+fmt(morar)+'</b></div>'+
+    '<div class="row"><span>Parcela de empréstimo</span><b>−'+fmt(PL.emprest)+'</b></div>'+
+    '<div class="row"><span>Assinaturas e pequenos fixos</span><b>−'+fmt(PL.peq)+'</b></div>'+
+    '<div class="row"><span><b>Resultado de dezembro</b></span><b class="'+(res<0?'bad':'ok')+'">'+fmt(res)+'</b></div>'+
+    '<div class="sub" style="margin-top:6px">'+(res<0?'Faltam '+fmt(-res)+' em dezembro, mesmo sem nenhuma compra nova no crédito. É o valor que precisa vir de renda extra, corte de gasto ou parcelamento negociado.':'Dezembro fecha com sobra.')+'</div></div>'+
+  '<div class="card"><h2>Seus números</h2><div class="grid" style="margin:0">'+f('pl-entrada','Entrada esperada (R$)',PL.entrada)+f('pl-data','Data da entrada',PL.entradaData||'','date')+'</div>'+
+    '<div class="grid" style="margin:0">'+f('pl-diario','Gasto por dia (comida e transporte)',PL.diario)+f('pl-bolsa','Bolsa de dezembro',PL.bolsa)+'</div>'+
+    '<div class="grid" style="margin:0">'+f('pl-emprest','Parcela de empréstimo',PL.emprest)+f('pl-peq','Assinaturas e fixos',PL.peq)+'</div>'+
+    '<div class="sub">R$ 22 por dia vem da média histórica de comida, mercado e transporte. Troque pelo seu valor real. Dezembro usa as compras que os bancos já lançaram nas faturas de '+mlabel(nk)+'.</div></div>'}
 function vJuros(){
   var tp={},bk={},tot=0;D.custos.forEach(function(c){tp[c.t]=(tp[c.t]||0)+c.v;bk[c.b]=(bk[c.b]||0)+c.v;tot+=c.v});
   var ms=Object.keys(D.cm).sort().slice(-12),rows=ms.map(function(m){return{l:MES[+m.slice(5,7)-1],v:[Math.max(0,D.cm[m])]}});
@@ -519,6 +561,9 @@ function render(){
 function bind(){
   var q=function(s,f){var e=$(s);if(e)e.onclick=f};
   q('#sync',syncBanks);
+  var plf={'pl-entrada':['entrada',1],'pl-diario':['diario',1],'pl-bolsa':['bolsa',1],'pl-emprest':['emprest',1],'pl-peq':['peq',1],'pl-data':['entradaData',0]};
+  Object.keys(plf).forEach(function(id){var e=$('#'+id);if(e)e.onchange=function(){var f=plf[id];if(f[1]){var v=pnum(e.value);PL[f[0]]=v==null?0:v}else PL[f[0]]=e.value;savePl();render()}});
+  document.querySelectorAll('[data-pk]').forEach(function(b){b.onchange=function(){PLOK[b.dataset.pk]=b.checked;ls('fin-plano-ok',JSON.stringify(PLOK));render()}});
   document.querySelectorAll('[data-pv]').forEach(function(b){b.onclick=function(){S.pv=b.dataset.pv;render()}});
   var simf={'sm-renda0':['renda0',1],'sm-renda1':['renda1',1],'sm-extra':['extra',1],'sm-gasto':['gasto',1],'sm-rend':['rend',1],'sm-meta':['meta',1],'sm-ini':['ini',1],'sm-desde':['desde',0],'sm-extraDesde':['extraDesde',0],'sm-fim':['fim',0]};
   Object.keys(simf).forEach(function(id){var e=$('#'+id);if(e)e.onchange=function(){var f=simf[id];if(f[1]){var v=pnum(e.value);if(f[0]==='ini')SIM.ini=v;else SIM[f[0]]=v==null?0:v}else if(e.value)SIM[f[0]]=e.value;saveSim();render()}});
