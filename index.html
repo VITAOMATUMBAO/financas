@@ -34,12 +34,12 @@ h1{font-size:20px;margin:6px 0 2px}h2{font-size:15px;margin:0 0 6px}
 .alert{border-left:3px solid var(--warn);background:#2a2415;padding:8px 10px;border-radius:8px;margin:8px 0;font-size:13px}
 .alert.bad{border-color:var(--bad);background:#2b1717;color:var(--fg)}
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:rgba(15,17,21,.94);backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 6px calc(env(safe-area-inset-bottom) + 6px)}
-nav button{flex:1;background:none;border:0;color:var(--mut);font:inherit;font-size:11px;padding:6px 2px;display:flex;flex-direction:column;align-items:center;gap:2px}
+nav button{flex:1;min-width:0;background:none;border:0;color:var(--mut);font:inherit;font-size:11px;padding:6px 2px;display:flex;flex-direction:column;align-items:center;gap:2px}
 nav button b{font-size:18px;font-weight:400}nav button.on{color:var(--fg)}
 button.btn{background:var(--a);color:#06101f;border:0;border-radius:10px;padding:10px 14px;font:inherit;font-weight:600}
 button.btn.sec{background:var(--line);color:var(--fg)}
 input,select{width:100%;background:#0f1115;color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:10px;font:inherit;margin:4px 0 10px}
-.chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}.chips button{flex:none;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:20px;padding:6px 12px;font:inherit;font-size:13px}.chips button.on{background:var(--fg);color:var(--bg)}
+.chips{margin:8px 0;display:flex;gap:6px;overflow-x:auto;padding-bottom:4px}.chips button{flex:none;background:var(--card);border:1px solid var(--line);color:var(--fg);border-radius:20px;padding:6px 12px;font:inherit;font-size:13px}.chips button.on{background:var(--fg);color:var(--bg)}
 svg text{fill:var(--mut);font-size:10px}
 .pill{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--line);color:var(--mut)}
 .rf{background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:50%;width:40px;height:40px;font-size:20px;line-height:1;margin-left:6px}.rf.spin{animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
@@ -52,6 +52,7 @@ svg text{fill:var(--mut);font-size:10px}
 <nav id="nav">
   <button data-t="inicio" class="on"><b>◉</b>Início</button>
   <button data-t="gastos"><b>≡</b>Gastos</button>
+  <button data-t="cats"><b>▦</b>Categ.</button>
   <button data-t="juros"><b>%</b>Juros</button>
   <button data-t="cartoes"><b>▭</b>Cartões</button>
   <button data-t="proj"><b>↗</b>Meta</button>
@@ -70,7 +71,7 @@ var META=74000;
 function ls(k,v){try{if(v===undefined)return localStorage.getItem(k);if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v)}catch(e){return null}}
 var CFG=(function(){try{return Object.assign({},DEF,JSON.parse(ls('fin-cfg')||'{}'))}catch(e){return Object.assign({},DEF)}})();
 function saveCfg(){ls('fin-cfg',JSON.stringify({clientId:CFG.clientId,items:CFG.items,own:CFG.own}))}
-var S={tab:'inicio',accounts:[],items:{},tx:[],last:null,err:null,busy:false,month:null,cat:null,q:'',reserva:parseFloat(ls('fin-reserva')||'0')||0};
+var S={cper:'3',cdet:null,tab:'inicio',accounts:[],items:{},tx:[],last:null,err:null,busy:false,month:null,cat:null,q:'',reserva:parseFloat(ls('fin-reserva')||'0')||0};
 var brl=new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'});
 var $=function(s){return document.querySelector(s)};
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -106,6 +107,8 @@ async function pullTx(acc,since){
   }
   return out;
 }
+function dedupe(accs){var seen={};return accs.filter(function(a){if(a.type!=='CREDIT')return true;var cd=a.creditData||{},k=a._item+'|'+a.balance+'|'+cd.creditLimit+'|'+cd.availableCreditLimit;
+  if(seen[k]){if(!seen[k].creditData.balanceDueDate&&cd.balanceDueDate){var i=accs.indexOf(seen[k]);seen[k]._drop=1}else return false}seen[k]=a;return true}).filter(function(a){return !a._drop})}
 async function refresh(full){
   if(S.busy)return;S.busy=true;setLive('on','atualizando…');
   try{
@@ -115,7 +118,7 @@ async function refresh(full){
       var it=await api('/items/'+id);items[id]={name:it.connector&&it.connector.name,status:it.status,updated:it.lastUpdatedAt,id:id};
       var a=await api('/accounts?itemId='+id);a.results.forEach(function(x){x._item=items[id].name;accs.push(x)});
     }));
-    S.accounts=accs;S.items=items;
+    accs=dedupe(accs);S.accounts=accs;S.items=items;
     var haveTx=S.tx.length>0&&!full,since=haveTx&&S.last?new Date(new Date(S.last).getTime()-6*3600*1000).toISOString():null;
     var res=await Promise.all(accs.map(function(a){return pullTx(a,since)}));
     var map={};if(haveTx)S.tx.forEach(function(t){map[t.id]=t});
@@ -238,6 +241,20 @@ function vGastos(){
   '<div class="chips">'+ms.map(function(m){return '<button data-m="'+m+'" class="'+(m===S.month?'on':'')+'">'+mlabel(m)+'</button>'}).join('')+'</div>'+
   '<div class="card"><h2>'+mlabel(S.month)+': '+fmt(D.gt[S.month]||0)+'</h2>'+arr.map(function(a){return '<div data-c="'+esc(a[0])+'" style="padding:6px 0"><div class="row" style="border:0;padding:0"><span>'+esc(a[0])+(S.cat===a[0]?' ✕':'')+'</span><span>'+fmt(a[1])+'</span></div><div class="bar"><i style="width:'+(a[1]/mx*100)+'%"></i></div></div>'}).join('')+(arr.length?'':'<div class="sub">Sem gastos neste mês.</div>')+'</div>'+
   '<input id="q" placeholder="Buscar no extrato…" value="'+esc(S.q)+'"><div class="card">'+(list.length?list.map(txRow).join(''):'<div class="sub">Nada encontrado.</div>')+'</div>'}
+function monthsBack(n){var out=[],d=new Date();d.setDate(1);for(var i=0;i<n;i++){out.unshift(d.toISOString().slice(0,7));d.setMonth(d.getMonth()-1)}return out}
+function vCats(){
+  var N=S.cper==='all'?36:+S.cper,ms=monthsBack(N).filter(function(m){return D.gm[m]!=null||m<=curMonth()});
+  if(S.cper==='all'){ms=(D.months||[]).filter(function(m){return D.gm[m]!=null})}
+  var tot={},grand=0;ms.forEach(function(m){var c=D.cat[m]||{};Object.keys(c).forEach(function(k){tot[k]=(tot[k]||0)+c[k];grand+=c[k]})});
+  var arr=Object.keys(tot).map(function(k){return[k,tot[k]]}).sort(function(a,b){return b[1]-a[1]}),mx=arr.length?arr[0][1]:1,n=ms.length||1;
+  var chips='<div class="chips">'+[['1','Este mês'],['3','3 meses'],['6','6 meses'],['12','12 meses'],['all','Tudo']].map(function(p){return '<button data-p="'+p[0]+'" class="'+(S.cper===p[0]?'on':'')+'">'+p[1]+'</button>'}).join('')+'</div>';
+  var h=chips+'<div class="card"><div class="lbl">Gasto no período</div><div class="big">'+fmt(grand)+'</div><div class="sub">Média de '+fmt(grand/n)+' por mês · '+n+(n===1?' mês':' meses')+' · sem juros e IOF (veja a aba Juros)</div></div>';
+  if(S.cdet){
+    var cat=S.cdet,rows=monthsBack(12).map(function(m){return{l:MES[+m.slice(5,7)-1],v:[Math.max(0,(D.cat[m]||{})[cat]||0)]}});
+    var list=S.tx.filter(function(t){return t._G===cat&&ms.indexOf(t._M)>=0}).sort(function(a,b){return a.d<b.d?1:-1}).slice(0,200);
+    return chips+'<div class="card"><div class="row" style="border:0;padding:0"><div><b>'+esc(cat)+'</b><div class="sub">'+fmt(tot[cat]||0)+' no período</div></div><div class="n"><button class="btn sec" id="cback">Voltar</button></div></div>'+bars(rows,{cols:['var(--b)']})+'<div class="sub">Últimos 12 meses</div></div><div class="card"><h2>Lançamentos</h2>'+(list.length?list.map(txRow).join(''):'<div class="sub">Nada neste período.</div>')+'</div>'}
+  h+='<div class="card"><h2>Por categoria</h2><div class="sub" style="margin-bottom:6px">Toque numa categoria para ver o histórico e os lançamentos.</div>'+arr.map(function(a){var pc=grand?a[1]/grand*100:0;return '<div data-k="'+esc(a[0])+'" style="padding:8px 0;border-bottom:1px solid var(--line)"><div class="row" style="border:0;padding:0"><span>'+esc(a[0])+'</span><span><b>'+fmt(a[1])+'</b> <span class="sub">'+Math.round(pc)+'%</span></span></div><div class="bar"><i style="width:'+(a[1]/mx*100)+'%"></i></div><div class="sub">'+fmt(a[1]/n)+' por mês</div></div>'}).join('')+(arr.length?'':'<div class="sub">Sem gastos no período.</div>')+'</div>';
+  return h}
 function vJuros(){
   var tp={},bk={},tot=0;D.custos.forEach(function(c){tp[c.t]=(tp[c.t]||0)+c.v;bk[c.b]=(bk[c.b]||0)+c.v;tot+=c.v});
   var ms=Object.keys(D.cm).sort().slice(-12),rows=ms.map(function(m){return{l:MES[+m.slice(5,7)-1],v:[Math.max(0,D.cm[m])]}});
@@ -276,7 +293,7 @@ function vCfg(){
   '<div class="card"><h2>Como isso funciona</h2><div class="msg">O app consulta a Pluggy direto do seu celular a cada '+CFG.refreshSec+' segundos enquanto está aberto. A Pluggy guarda o que os bancos informam pelo Open Finance; o botão "Pedir dados novos aos bancos" força uma nova leitura. Alguns bancos demoram para refletir uma compra, então "ao vivo" aqui quer dizer o mais novo que o banco liberou.</div></div>'}
 
 function render(){
-  var map={inicio:vInicio,gastos:vGastos,juros:vJuros,cartoes:vCartoes,proj:vProj,cfg:vCfg},v=$('#view');
+  var map={inicio:vInicio,gastos:vGastos,cats:vCats,juros:vJuros,cartoes:vCartoes,proj:vProj,cfg:vCfg},v=$('#view');
   if(!S.tx.length&&S.tab!=='cfg'&&S.tab!=='proj'){v.innerHTML=(S.err?'<div class="alert bad">'+esc(S.err)+'</div>':'')+'<div class="card"><div class="sub">'+(secret()?'Carregando seus dados…':'Abra Ajustes e cole o Client Secret.')+'</div></div>';return}
   var y=window.scrollY;v.innerHTML=map[S.tab]();window.scrollTo(0,y);
   $('#stamp').textContent=S.last?'Atualizado há '+ago(S.last):'sem dados ainda';
@@ -285,6 +302,9 @@ function render(){
 function bind(){
   var q=function(s,f){var e=$(s);if(e)e.onclick=f};
   q('#sync',syncBanks);
+  document.querySelectorAll('[data-p]').forEach(function(b){b.onclick=function(){S.cper=b.dataset.p;S.cdet=null;render()}});
+  document.querySelectorAll('[data-k]').forEach(function(b){b.onclick=function(){S.cdet=b.dataset.k;render();window.scrollTo(0,0)}});
+  q('#cback',function(){S.cdet=null;render()});
   document.querySelectorAll('[data-m]').forEach(function(b){b.onclick=function(){S.month=b.dataset.m;render()}});
   document.querySelectorAll('[data-c]').forEach(function(b){b.onclick=function(){S.cat=S.cat===b.dataset.c?null:b.dataset.c;render()}});
   var qi=$('#q');if(qi)qi.oninput=function(){S.q=qi.value;var p=qi.selectionStart;render();var n=$('#q');n.focus();n.setSelectionRange(p,p)};
