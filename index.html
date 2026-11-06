@@ -219,7 +219,10 @@ function tetoFor(m){var y=+m.slice(0,4),mo=+m.slice(5,7),k=y*12+mo;
 function billInfo(a){var b=a._bill;if(!b)return null;var today=new Date().toISOString().slice(0,10),paid=0;
   S.tx.forEach(function(t){if(t.a===a.id&&t.m<0&&(t.c==='Credit card payment'||t.c==='Transfer - Cash')&&t.d.slice(0,10)>=(b.close||'0000'))paid+=-t.m});
   var rest=Math.max(0,b.total-paid);return{total:b.total,paid:paid,rest:rest<1?0:rest,due:b.due,late:b.due<today,min:b.min}}
-function faturas(){return S.accounts.filter(function(a){return a.type==='CREDIT'&&a._bill}).map(function(a){var b=billInfo(a);return{n:a._item,due:b.due,amt:b.rest,late:b.late,total:b.total,paid:b.paid}}).filter(function(f){return f.amt>0}).sort(function(x,y){return x.due<y.due?-1:1})}
+function faturas(){var out=[];S.accounts.forEach(function(a){if(a.type!=='CREDIT'||!a._bill)return;var b=billInfo(a);
+  if(b.rest>0)out.push({n:a._item,due:b.due,amt:b.rest,late:b.late});
+  else if(b.late&&a.balance>1)out.push({n:a._item,due:null,amt:a.balance,late:false,nova:true})});
+  return out.sort(function(x,y){return (x.due||'9')<(y.due||'9')?-1:1})}
 function vInicio(){
   var cm=curMonth(),contas=0,fs=faturas(),fsum=0,od='';
   S.accounts.forEach(function(a){if(a.type==='BANK'){contas+=a.balance||0;if(a.bankData&&a.bankData.overdraftUsedLimit>0)od='Cheque especial em uso no '+esc(a._item)+': '+fmt(a.bankData.overdraftUsedLimit)}});
@@ -229,8 +232,8 @@ function vInicio(){
   return (S.err?'<div class="alert bad">'+esc(S.err)+'</div>':'')+
   '<div class="hero"><div class="lbl">Se você pagar todas as faturas hoje, sobra</div><div class="huge '+(livre<0?'bad':'ok')+'">'+fmt(livre)+'</div>'+
   '<div class="two"><div><div class="lbl">Nas contas</div><b>'+fmt(contas)+'</b></div><div><div class="lbl">Faturas a pagar</div><b>'+fmt(fsum)+'</b></div></div>'+(od?'<div class="sub warn" style="margin-top:10px">'+od+'</div>':'')+'</div>'+
-  '<h3>Faturas para pagar</h3><div class="card">'+(fs.length?fs.map(function(f){var d=Math.round((new Date(f.due)-new Date(new Date().toISOString().slice(0,10)))/864e5);
-    return '<div class="row"><div class="l"><div>'+esc(f.n)+'</div><div class="sub '+(f.late?'bad':'')+'">'+(f.late?'Venceu em '+dbr(f.due)+' · confira':'Vence em '+dbr(f.due)+(d<=7?' · em '+d+(d===1?' dia':' dias'):''))+'</div></div><div class="n"><b>'+fmt(f.amt)+'</b></div></div>'}).join(''):'<div class="sub">Nenhuma fatura aberta.</div>')+'</div>'+
+  '<h3>Faturas para pagar</h3><div class="card">'+(fs.length?fs.map(function(f){var d=f.due?Math.round((new Date(f.due)-new Date(new Date().toISOString().slice(0,10)))/864e5):0;
+    return '<div class="row"><div class="l"><div>'+esc(f.n)+'</div><div class="sub '+(f.late?'bad':'')+'">'+(f.nova?'Em aberto no cartão · a fatura nova ainda não saiu':f.late?'Venceu em '+dbr(f.due)+' · confira':'Vence em '+dbr(f.due)+(d<=7?' · em '+d+(d===1?' dia':' dias'):''))+'</div></div><div class="n"><b>'+fmt(f.amt)+'</b></div></div>'}).join(''):'<div class="sub">Nenhuma fatura aberta.</div>')+'</div>'+
   '<h3>Gasto de '+mlabel(cm)+'</h3><div class="card"><div class="two"><div><b class="big2">'+fmt(gasto)+'</b></div><div class="n sub">teto '+fmt(tt.teto_total)+'</div></div><div class="bar"><i style="width:'+pc+'%;background:'+(gasto>tt.teto_total?'var(--bad)':'var(--c)')+'"></i></div><div class="sub">Para o dia a dia neste período: '+fmt(tt.livre)+'. O resto é parcela e contabilidade.</div></div>'+
   '<h3>Últimos movimentos</h3><div class="card">'+(last.length?last.map(txRow).join(''):'<div class="sub">Sem dados ainda.</div>')+'</div>'+
   '<details class="card"><summary>Bancos conectados</summary>'+Object.keys(S.items).map(function(k){var i=S.items[k];return '<div class="row"><div class="l"><div>'+esc(i.name)+'</div><div class="sub">atualizado há '+ago(i.updated)+'</div></div><div class="n sub">'+esc(i.status)+'</div></div>'}).join('')+'<div style="margin-top:10px"><button class="btn" id="sync">Pedir dados novos aos bancos</button></div></details>'}
