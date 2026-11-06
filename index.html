@@ -222,6 +222,7 @@ function clean(s){s=String(s||'').replace(/COMPRA C\/CARTAO\s*\/?\s*:?/ig,' ').r
   .replace(/^\s*[A-Za-z]{1,4}\s?\*\s?/,'').replace(/\*+/g,' ').replace(/[\d\/|:]+/g,' ').replace(/\b(BR|BRA|PENDING)\b/ig,' ').replace(/\s+/g,' ').trim();return tcase(s)}
 var A_='Assinaturas e apps',T_='Transporte',AL='Alimentação fora',SB='Saúde e bem-estar',CU='Contas e utilidades',MP_='Mercado Pago (parcelado)',EMP='Empréstimos e parcelamentos';
 var RULES=[
+ [/AMANDA LUIZA/,SB,'Amanda Luiza (dentista)'],[/SILVANA BACELAR/,'Contabilidade','Silvana Bacelar (sistema contábil)'],
  [/ANTHROPIC|CLAUDE\.AI/,A_,'Claude (Anthropic)'],[/SPOTIFY/,A_,'Spotify'],[/APPLE\.COM|ITUNES/,A_,'Apple'],[/UBER\s*\*?\s*ONE/,A_,'Uber One'],
  [/KORU DESENVOLVIMENTO/,A_,'Koru (assinatura)'],[/GOOGLE|NETFLIX|YOUTUBE|DISNEY|HBO|AMAZON PRIME|MICROSOFT|OPENAI|CHATGPT/,A_,null],
  [/UBER/,T_,'Uber'],[/99 TECNOLOGIA|99\s?POP|\bPOP JAN|^POP\b/,T_,'99'],[/BUS SERVICOS|SPTRANS|BILHETE UNICO|METR[OÔ]\b|CPTM/,T_,'Ônibus e metrô'],
