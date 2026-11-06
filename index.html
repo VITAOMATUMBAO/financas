@@ -98,7 +98,7 @@ async function api(path,opt){
   if(!r.ok)throw new Error('Pluggy '+r.status+' em '+path.split('?')[0]);
   return r.json();
 }
-function slim(t,acc){return{id:t.id,a:t.accountId,d:t.date,m:t.amount,y:t.type==='CREDIT'?'C':'D',c:t.category||'',s:((t.description||'')+((t.descriptionRaw&&t.descriptionRaw!==t.description)?' '+t.descriptionRaw:'')).trim(),o:t.operationType||'',p:t.status==='PENDING'?1:0}}
+function slim(t,acc){return{id:t.id,a:t.accountId,d:t.date,m:t.amount,y:t.type==='CREDIT'?'C':'D',c:t.category||'',s:((t.description||'')+((t.descriptionRaw&&t.descriptionRaw!==t.description)?' '+t.descriptionRaw:'')).trim(),o:t.operationType||'',p:t.status==='PENDING'?1:0,f:(t.creditCardMetadata&&t.creditCardMetadata.billForecastDate)||''}}
 async function pullTx(acc,since){
   var out=[],p=new URLSearchParams({accountId:acc.id});
   if(since)p.set('createdAtFrom',since);
@@ -147,8 +147,8 @@ async function syncBanks(){
   }catch(e){S.err=e.message}
   S.busy=false;refresh(false);
 }
-function saveCache(){try{ls('fin-cache',JSON.stringify({tx:S.tx,last:S.last,accounts:S.accounts.map(function(a){return{id:a.id,type:a.type,subtype:a.subtype,name:a.name,balance:a.balance,_item:a._item,_bill:a._bill,creditData:a.creditData&&{creditLimit:a.creditData.creditLimit,availableCreditLimit:a.creditData.availableCreditLimit,balanceDueDate:a.creditData.balanceDueDate,minimumPayment:a.creditData.minimumPayment},bankData:a.bankData&&{overdraftContractedLimit:a.bankData.overdraftContractedLimit,overdraftUsedLimit:a.bankData.overdraftUsedLimit}}}),items:S.items}))}catch(e){}}
-function loadCache(){try{var c=JSON.parse(ls('fin-cache')||'null');if(c){S.tx=c.tx||[];S.last=c.last;S.accounts=c.accounts||[];S.items=c.items||{}}}catch(e){}}
+function saveCache(){try{ls('fin-cache2',JSON.stringify({tx:S.tx,last:S.last,accounts:S.accounts.map(function(a){return{id:a.id,type:a.type,subtype:a.subtype,name:a.name,balance:a.balance,_item:a._item,_bill:a._bill,creditData:a.creditData&&{creditLimit:a.creditData.creditLimit,availableCreditLimit:a.creditData.availableCreditLimit,balanceDueDate:a.creditData.balanceDueDate,minimumPayment:a.creditData.minimumPayment},bankData:a.bankData&&{overdraftContractedLimit:a.bankData.overdraftContractedLimit,overdraftUsedLimit:a.bankData.overdraftUsedLimit}}}),items:S.items}))}catch(e){}}
+function loadCache(){try{var c=JSON.parse(ls('fin-cache2')||'null');if(c){S.tx=c.tx||[];S.last=c.last;S.accounts=c.accounts||[];S.items=c.items||{}}}catch(e){}}
 
 /* ---------- classificação (mesmas regras do painel) ---------- */
 var D={};
@@ -219,9 +219,11 @@ function tetoFor(m){var y=+m.slice(0,4),mo=+m.slice(5,7),k=y*12+mo;
 function billInfo(a){var b=a._bill;if(!b)return null;var today=new Date().toISOString().slice(0,10),paid=0;
   S.tx.forEach(function(t){if(t.a===a.id&&t.m<0&&(t.c==='Credit card payment'||t.c==='Transfer - Cash')&&t.d.slice(0,10)>=(b.close||'0000'))paid+=-t.m});
   var rest=Math.max(0,b.total-paid);return{total:b.total,paid:paid,rest:rest<1?0:rest,due:b.due,late:b.due<today,min:b.min}}
+function nextEst(a){var b=a._bill;if(!b)return 0;var y=+b.due.slice(0,4),m=+b.due.slice(5,7)+1;if(m>12){m=1;y++}var key=y+'-'+(m<10?'0':'')+m,v=0;
+  S.tx.forEach(function(t){if(t.a===a.id&&t.f===key&&!(t.m<0&&(t.c==='Credit card payment'||t.c==='Transfer - Cash')))v+=t.m});return v>1?v:0}
 function faturas(){var out=[];S.accounts.forEach(function(a){if(a.type!=='CREDIT'||!a._bill)return;var b=billInfo(a);
   if(b.rest>0)out.push({n:a._item,due:b.due,amt:b.rest,late:b.late});
-  else if(b.late&&a.balance>1)out.push({n:a._item,due:null,amt:a.balance,late:false,nova:true})});
+  else if(b.late){var e=nextEst(a);if(e>0)out.push({n:a._item,due:null,amt:e,late:false,nova:true})}});
   return out.sort(function(x,y){return (x.due||'9')<(y.due||'9')?-1:1})}
 function vInicio(){
   var cm=curMonth(),contas=0,fs=faturas(),fsum=0,od='';
@@ -233,7 +235,7 @@ function vInicio(){
   '<div class="hero"><div class="lbl">Se você pagar todas as faturas hoje, sobra</div><div class="huge '+(livre<0?'bad':'ok')+'">'+fmt(livre)+'</div>'+
   '<div class="two"><div><div class="lbl">Nas contas</div><b>'+fmt(contas)+'</b></div><div><div class="lbl">Faturas a pagar</div><b>'+fmt(fsum)+'</b></div></div>'+(od?'<div class="sub warn" style="margin-top:10px">'+od+'</div>':'')+'</div>'+
   '<h3>Faturas para pagar</h3><div class="card">'+(fs.length?fs.map(function(f){var d=f.due?Math.round((new Date(f.due)-new Date(new Date().toISOString().slice(0,10)))/864e5):0;
-    return '<div class="row"><div class="l"><div>'+esc(f.n)+'</div><div class="sub '+(f.late?'bad':'')+'">'+(f.nova?'Em aberto no cartão · a fatura nova ainda não saiu':f.late?'Venceu em '+dbr(f.due)+' · confira':'Vence em '+dbr(f.due)+(d<=7?' · em '+d+(d===1?' dia':' dias'):''))+'</div></div><div class="n"><b>'+fmt(f.amt)+'</b></div></div>'}).join(''):'<div class="sub">Nenhuma fatura aberta.</div>')+'</div>'+
+    return '<div class="row"><div class="l"><div>'+esc(f.n)+'</div><div class="sub '+(f.late?'bad':'')+'">'+(f.nova?'Estimada pelos lançamentos · vencimento ainda não informado pelo banco':f.late?'Venceu em '+dbr(f.due)+' · confira':'Vence em '+dbr(f.due)+(d<=7?' · em '+d+(d===1?' dia':' dias'):''))+'</div></div><div class="n"><b>'+fmt(f.amt)+'</b></div></div>'}).join(''):'<div class="sub">Nenhuma fatura aberta.</div>')+'</div>'+
   '<h3>Gasto de '+mlabel(cm)+'</h3><div class="card"><div class="two"><div><b class="big2">'+fmt(gasto)+'</b></div><div class="n sub">teto '+fmt(tt.teto_total)+'</div></div><div class="bar"><i style="width:'+pc+'%;background:'+(gasto>tt.teto_total?'var(--bad)':'var(--c)')+'"></i></div><div class="sub">Para o dia a dia neste período: '+fmt(tt.livre)+'. O resto é parcela e contabilidade.</div></div>'+
   '<h3>Últimos movimentos</h3><div class="card">'+(last.length?last.map(txRow).join(''):'<div class="sub">Sem dados ainda.</div>')+'</div>'+
   '<details class="card"><summary>Bancos conectados</summary>'+Object.keys(S.items).map(function(k){var i=S.items[k];return '<div class="row"><div class="l"><div>'+esc(i.name)+'</div><div class="sub">atualizado há '+ago(i.updated)+'</div></div><div class="n sub">'+esc(i.status)+'</div></div>'}).join('')+'<div style="margin-top:10px"><button class="btn" id="sync">Pedir dados novos aos bancos</button></div></details>'}
@@ -279,7 +281,7 @@ function vCartoes(){
   var cs=S.accounts.filter(function(a){return a.type==='CREDIT'}),h='';
   cs.forEach(function(a){var cd=a.creditData||{},b=billInfo(a),lim=cd.creditLimit>1?cd.creditLimit:0,pc=lim?Math.min(100,a.balance/lim*100):0;
     h+='<div class="card"><div class="row" style="border:0;padding:0 0 6px"><div><b>'+esc(a._item)+'</b><div class="sub">'+esc(a.name)+'</div></div></div>'+
-    (b?(b.rest>0?'<div class="lbl">Falta pagar da fatura</div><div class="big2">'+fmt(b.rest)+'</div><div class="sub '+(b.late?'bad':'')+'">'+(b.late?'Venceu':'Vence')+' em '+dbr(b.due)+' · fatura de '+fmt(b.total)+(b.paid>0?' · já pago '+fmt(b.paid):'')+(b.min&&!b.paid?' · mínimo '+fmt(b.min):'')+'</div>':'<div class="lbl">Fatura de '+dbr(b.due)+'</div><div class="big2 ok">Paga</div><div class="sub">Fatura de '+fmt(b.total)+', paga em '+fmt(b.paid)+'</div>'):'<div class="sub">Sem fatura aberta.</div>')+
+    (b?(b.rest>0?'<div class="lbl">Falta pagar da fatura</div><div class="big2">'+fmt(b.rest)+'</div><div class="sub '+(b.late?'bad':'')+'">'+(b.late?'Venceu':'Vence')+' em '+dbr(b.due)+' · fatura de '+fmt(b.total)+(b.paid>0?' · já pago '+fmt(b.paid):'')+(b.min&&!b.paid?' · mínimo '+fmt(b.min):'')+'</div>':'<div class="lbl">Fatura de '+dbr(b.due)+'</div><div class="big2 ok">Paga</div><div class="sub">Fatura de '+fmt(b.total)+', paga em '+fmt(b.paid)+'</div>'+(nextEst(a)>0?'<div class="sub" style="margin-top:6px">Próxima fatura, estimada pelos lançamentos: <b>'+fmt(nextEst(a))+'</b> (o banco ainda não informou valor final nem vencimento)</div>':'')):'<div class="sub">Sem fatura aberta.</div>')+
     '<div class="sub" style="margin-top:8px">Total devido, com parcelas futuras: '+fmt(a.balance)+'</div>'+(lim?'<div class="bar"><i style="width:'+pc+'%;background:'+(pc>85?'var(--bad)':'var(--a)')+'"></i></div><div class="sub">Limite '+fmt(lim)+' · usado '+Math.round(pc)+'%</div>':'')+'</div>'});
   var fk=Object.keys(D.fut).sort(),ft=0;fk.forEach(function(k){ft+=D.fut[k]});
   h+='<h3>Parcelas já agendadas · '+fmt(ft)+'</h3><div class="card">'+(fk.length?fk.map(function(k){var p=k.split('|');return '<div class="row"><span>'+mlabel(p[0])+' · '+esc(p[1])+'</span><span>'+fmt(D.fut[k])+'</span></div>'}).join(''):'<div class="sub">Nenhuma.</div>')+'</div>';
@@ -353,7 +355,7 @@ function bind(){
   var qi=$('#q');if(qi)qi.oninput=function(){S.q=qi.value;var p=qi.selectionStart;render();var n=$('#q');n.focus();n.setSelectionRange(p,p)};
   var ri=$('#res');if(ri)ri.onchange=function(){S.reserva=parseFloat(String(ri.value).replace(/\./g,'').replace(',','.'))||0;ls('fin-reserva',String(S.reserva));render()};
   q('#save',function(){ls('fin-secret',$('#sec').value.trim());CFG.clientId=$('#cid').value.trim();CFG.items=$('#its').value.split(',').map(function(s){return s.trim()}).filter(Boolean);CFG.own=$('#own').value.trim();saveCfg();KEY=null;S.tab='inicio';refresh(true)});
-  q('#clear',function(){['fin-secret','fin-cache','fin-cfg','fin-reserva'].forEach(function(k){ls(k,null)});S.tx=[];S.accounts=[];S.last=null;D={};render()})}
+  q('#clear',function(){['fin-secret','fin-cache2','fin-cfg','fin-reserva'].forEach(function(k){ls(k,null)});S.tx=[];S.accounts=[];S.last=null;D={};render()})}
 $('#nav').onclick=function(e){var b=e.target.closest('button');if(!b)return;S.tab=b.dataset.t;render();window.scrollTo(0,0)};
 loadCache();derive();render();
 if(secret())refresh(!S.tx.length);else{S.tab='cfg';render()}
